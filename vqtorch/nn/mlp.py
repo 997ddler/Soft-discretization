@@ -16,4 +16,5 @@ class MLP(nn.Module):
         x = self._liner2(x)
         x = F.relu(x)
         x = self._liner3(x)
+        # x = F.relu()
         return x

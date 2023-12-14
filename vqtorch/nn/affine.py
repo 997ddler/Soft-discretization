@@ -81,11 +81,18 @@ class AffineTransform(nn.Module):
 		# self.running_ze_var = wd * self.running_ze_var
 		return
 
-	def alpha_loss(self):
+	def alpha_loss_1(self):
 		if self.use_learnable_std or self.use_learnable_mean:
-			return ((1 - self.alpha) ** 2).mean()
+			return -(self.alpha ** 2).sum()  # ((1 - self.alpha) ** 2).mean()
 		else:
 			return 1.0
+
+	def alpha_loss_2(self):
+		if self.use_learnable_std or self.use_learnable_mean:
+			return ((1 - self.alpha) ** 2).sum()
+		else:
+			return 1.0
+
 
 	def forward(self, codebook):
 		scale0, bias0 = self.get_affine_params()

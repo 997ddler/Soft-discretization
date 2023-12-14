@@ -42,11 +42,13 @@ class VectorQuant(_VQBaseLayer):
 			using_statistics: bool = False,
 			use_learnable_std: bool = False,
 			use_learnable_mean: bool = False,
+			alter_penalty : bool = False,
 			**kwargs,
 			):
 
 		super().__init__(feature_size, num_codes, **kwargs)
 		self.loss_fn, self.dist_fn = get_dist_fns('euclidean')
+		self.alter_penalty = alter_penalty
 
 		if beta < 0.0 or beta > 1.0:
 			raise ValueError(f'beta must be in [0, 1] but got {beta}')
@@ -136,7 +138,7 @@ class VectorQuant(_VQBaseLayer):
 
 	def alpha_loss(self):
 		if hasattr(self, 'affine_transform'):
-			return self.affine_transform.alpha_loss()
+			return self.affine_transform.alpha_loss_2() if self.alter_penalty else self.affine_transform.alpha_loss_1()
 		return 1.0
 
 	@torch.no_grad()

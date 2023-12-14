@@ -45,6 +45,7 @@ class my_plot():
             alpha = np.abs(alpha)
             plt.title(model_name)
             plt.bar(x=np.arange(0, len(alpha)), height=alpha, color=color)
+            plt.savefig('D:/discrete representation/vqtorch-main/Experiments/alpha' + model_name + '.png')
 
 
     def plot_tSNE(self, vectors, model_name = None):
@@ -56,7 +57,10 @@ class my_plot():
         plt.title(model_name)
         plt.scatter(Y[:-1, 0], Y[:-1, 1], c='red')
         plt.scatter(Y[-1, 0], Y[-1, 1], c='blue')
-        plt.title("t-SNE")
+        plt.savefig('D:/discrete representation/vqtorch-main/Experiments/tSNE' + model_name + '.png')
+
+    def save_fig(self):
+        self._fig.savefig('D:/discrete representation/vqtorch-main/Experiments/training_loss.png')
 
     def already(self):
         self._fig.legend(loc='upper left', bbox_to_anchor=(0.0, 1.0), fontsize='small')
