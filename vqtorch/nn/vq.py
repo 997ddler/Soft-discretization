@@ -7,6 +7,7 @@ import vqtorch
 from vqtorch.norms import with_codebook_normalization
 from .vq_base import _VQBaseLayer
 from .affine import AffineTransform
+from .. import utils
 
 
 class VectorQuant(_VQBaseLayer):
@@ -42,7 +43,8 @@ class VectorQuant(_VQBaseLayer):
 			using_statistics: bool = False,
 			use_learnable_std: bool = False,
 			use_learnable_mean: bool = False,
-			alter_penalty : bool = False,
+			alter_penalty : str = 'default',
+			temperature_scheduler = None,
 			**kwargs,
 			):
 
@@ -72,6 +74,7 @@ class VectorQuant(_VQBaseLayer):
 										use_learnable_mean=use_learnable_mean,
 										lr_scale=affine_lr,
 										num_groups=affine_groups,
+										temperature_scheduler = temperature_scheduler
 										)
 		if replace_freq > 0:
 			vqtorch.nn.utils.lru_replacement(self, rho=0.01, timeout=replace_freq)
@@ -86,6 +89,10 @@ class VectorQuant(_VQBaseLayer):
 			z_q = z + (z_q - z).detach()
 		return z_q
 
+	def get_inner_layer(self):
+		if not hasattr(self, 'affine_transform'):
+			raise Exception('affine_transform is None')
+		return self.affine_transform.get_inner_layer()
 
 	def compute_loss(self, z_e, z_q):
 		""" computes loss between z and z_q """
@@ -126,7 +133,7 @@ class VectorQuant(_VQBaseLayer):
 
 		if self.training and hasattr(self, 'inplace_codebook_optimizer'):
 			# update codebook inplace 
-			((z_q - z.detach()) ** 2).mean().backward()
+			((z_q - z.detach()) ** 2).mean().backward(retain_graph=True)
 			self.inplace_codebook_optimizer.step()
 			self.inplace_codebook_optimizer.zero_grad()
 
@@ -138,7 +145,12 @@ class VectorQuant(_VQBaseLayer):
 
 	def alpha_loss(self):
 		if hasattr(self, 'affine_transform'):
-			return self.affine_transform.alpha_loss_2() if self.alter_penalty else self.affine_transform.alpha_loss_1()
+			if self.alter_penalty == 'small':
+				return self.affine_transform.alpha_loss_3()
+			elif self.alter_penalty == 'between1':
+				return self.affine_transform.alpha_loss_2()
+			else:
+				return self.affine_transform.alpha_loss_1()
 		return 1.0
 
 	@torch.no_grad()
@@ -197,28 +209,32 @@ class VectorQuant(_VQBaseLayer):
 
 		return z_q, to_return
 
+	def get_last_mean(self):
+		if hasattr(self, 'affine_transform'):
+			return self.affine_transform.get_last_mean()
+		return None
 
-def train(model, train_loader, train_iterations=1000, alpha=10):
-	def iterate_dataset(data_loader):
-		data_iter = iter(data_loader)
-		while True:
-			try:
-				x, y = next(data_iter)
-			except StopIteration:
-				data_iter = iter(data_loader)
-				x, y = next(data_iter)
-			yield x.cuda(), y.cuda()
-
-	for _ in (pbar := trange(train_iterations)):
-		opt.zero_grad()
-		x, _ = next(iterate_dataset(train_loader))
-		out, vq_out = model(x)
-		rec_loss = (out - x).abs().mean()
-		cmt_loss = vq_out['loss']
-		(rec_loss + alpha * cmt_loss).backward()
-
-		opt.step()
-		pbar.set_description(f'rec loss: {rec_loss.item():.3f} | ' + \
-							 f'cmt loss: {cmt_loss.item():.3f} | ' + \
-							 f'active %: {vq_out["q"].unique().numel() / num_codes * 100:.3f}')
-	return
+# def train(model, train_loader, train_iterations=1000, alpha=10):
+# 	def iterate_dataset(data_loader):
+# 		data_iter = iter(data_loader)
+# 		while True:
+# 			try:
+# 				x, y = next(data_iter)
+# 			except StopIteration:
+# 				data_iter = iter(data_loader)
+# 				x, y = next(data_iter)
+# 			yield x.cuda(), y.cuda()
+#
+# 	for _ in (pbar := trange(train_iterations)):
+# 		opt.zero_grad()
+# 		x, _ = next(iterate_dataset(train_loader))
+# 		out, vq_out = model(x)
+# 		rec_loss = (out - x).abs().mean()
+# 		cmt_loss = vq_out['loss']
+# 		(rec_loss + alpha * cmt_loss).backward()
+#
+# 		opt.step()
+# 		pbar.set_description(f'rec loss: {rec_loss.item():.3f} | ' + \
+# 							 f'cmt loss: {cmt_loss.item():.3f} | ' + \
+# 							 f'active %: {vq_out["q"].unique().numel() / num_codes * 100:.3f}')
+# 	return

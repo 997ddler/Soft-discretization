@@ -12,9 +12,9 @@ class MLP(nn.Module):
 
     def forward(self, x):
         x = self._liner1(x)
-        x = F.relu(x)
+        x = F.elu(x)
         x = self._liner2(x)
-        x = F.relu(x)
+        x = F.elu(x)
         x = self._liner3(x)
-        # x = F.relu()
+        # x = F.elu(x)
         return x

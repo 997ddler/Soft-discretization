@@ -1,4 +1,5 @@
 import math
+import random
 
 import numpy as np
 import torch
@@ -18,7 +19,15 @@ from torch.nn import functional as F
 from vqtorch.nn.utils.plot_util import my_plot
 import lpips as lpips
 from vqtorch.nn.sq_vae import GaussianSQVAE, VmfSQVAE, SQVAE
+from vqtorch.nn.utils.temperature_scheduler import scheduler_increase_exp, scheduler_increase_inverse,scheduler_increase_linear, scheduler_decrease
 
+seed = random.randint(0, 1000000)
+#seed = 284192 # 41130 #3407 is all you need hahahaha
+torch.manual_seed(seed)
+torch.cuda.manual_seed(seed)
+torch.cuda.manual_seed_all(seed)
+random.seed(seed)
+np.random.seed(seed)
 
 class VQ_VAE(nn.Module):
     def __init__(
@@ -28,6 +37,7 @@ class VQ_VAE(nn.Module):
                 flg_bn=True,
                 flg_var_q=False,
                 using_penalization=False,
+                inner_learning_rate = 0.0,
                 **vq_kwargs
     ):
         super().__init__()
@@ -35,6 +45,7 @@ class VQ_VAE(nn.Module):
         self._vq = VectorQuant(dim_z, **vq_kwargs)
         self._decoder = DecoderVqResnet32(dim_z, num_rb, flg_bn)
         self.using_penalization = using_penalization
+        self.inner_learning_rate = inner_learning_rate
         return
 
     def forward(self, x):
@@ -52,6 +63,17 @@ class VQ_VAE(nn.Module):
     def alpha_loss(self):
         return self._vq.alpha_loss()
 
+    def get_last_mean(self):
+        return self._vq.get_last_mean()
+
+    def is_schedule_learning_rate(self):
+        return self.inner_learning_rate != 0.0
+
+    def get_inner_learning_rate(self):
+        return self.inner_learning_rate
+
+    def get_inner_layer(self):
+        return self._vq.get_inner_layer()
 
 def train(model, model_name, optimizer, scheduler = None, train_loader = None, alpha=10, epochs = 15):
     i = 0
@@ -87,7 +109,7 @@ def train(model, model_name, optimizer, scheduler = None, train_loader = None, a
                 lr_update.append(scheduler.get_lr()[0])
             i += 1
 
-            lpips_losses.append(lpips_loss.item())
+            lpips_losses.append(lpips_loss.item()) 
             rec_losses.append(rec_loss.item())
             perplexities.append(vq_out["perplexity"].cpu().numpy())
             active_ratios.append(vq_out["active_ratio"])
@@ -104,11 +126,11 @@ def train(model, model_name, optimizer, scheduler = None, train_loader = None, a
     train_res_perplexity_smooth = savgol_filter(perplexities, 201, 7)
     acitves = savgol_filter(active_ratios, 201, 7)
     lpips_losses = savgol_filter(lpips_losses, 201, 7)
-    alpha_learnable = np.arange(0, 64) if isinstance(model, SQVAE) or model.get_alpha() is None else np.array(torch.squeeze(model.get_alpha()).cpu().numpy())
-
+    alpha_learnable = np.arange(0, 64) if isinstance(model, SQVAE) or model.get_alpha() is None else np.array(torch.squeeze(model.get_alpha()).detach().cpu().numpy())
+    last_mean = model.get_last_mean() if not isinstance(model, SQVAE) else None
     # plot
     my_plot.get_instance().update(train_res_perplexity_smooth, train_res_recon_error_smooth, acitves,lpips_losses, alpha_learnable, model_name)
-    my_plot.get_instance().plot_tSNE(model.getcodebook().detach().cpu().numpy(), model_name)
+    my_plot.get_instance().plot_tSNE(model.getcodebook().detach().cpu().numpy(), model_name, last_mean)
 
 
 def test(model, test_loader, type = 'test'):
@@ -207,7 +229,7 @@ def load_dataset(batch_size = 256):
     #                         batch_size=batch_size,
     #                         shuffle=True,
     #                         pin_memory=True)
-
+    #
     # path = "D:/discrete representation/vqtorch-main/tiny-imagenet-200"
     # train_loader = DataLoader(TinyImageNet(path, True, transform), batch_size=batch_size, shuffle=True)
     # test_loader = DataLoader(TinyImageNet(path, False, transform), batch_size=batch_size, shuffle=True)
@@ -227,6 +249,8 @@ warm_epochs = 10
 weight_decay = 1e-4
 dict_dim = 64
 
+
+
 config = {
     "dataset_space" : 32 * 32 * 3,
     "param_var_q" : "gaussian_1",
@@ -237,25 +261,50 @@ config = {
 
 }
 
+t_sche1 = scheduler_increase_linear()
+t_sche2 = scheduler_increase_exp()
+t_sche22 = scheduler_increase_exp()
+t_sche3 = scheduler_increase_inverse()
+t_sche4 = scheduler_decrease()
 
-
+inplace_optimizer1 = lambda *args, **kwargs: torch.optim.AdamW(*args, **kwargs, lr=learning_rate, weight_decay=weight_decay, betas=(0.9, 0.95))
+inplace_optimizer2 = lambda *args, **kwargs: torch.optim.AdamW(*args, **kwargs, lr=learning_rate, weight_decay=weight_decay, betas=(0.9, 0.95))
 # model = VQ_VAE(num_codes=num_codes, kmeans_init=False, sync_nu = 2.0, using_statistics = True,  affine_lr = 2.0).cuda()
 dict = {
-        #"VQ_VAE" : VQ_VAE(num_codes=num_codes).cuda(),
+        "VQ_VAE" : VQ_VAE(num_codes=num_codes).cuda(),
         #"VQ_VAE + sync" : VQ_VAE(num_codes=num_codes, sync_nu = 2.0, dim_z = dict_dim).cuda(),
-        #"VQ_VAE + sync + learnable affine(paper)" : VQ_VAE(num_codes=num_codes, sync_nu=2.0, affine_lr=2.0, dim_z = dict_dim).cuda(),
-        #"VQ_VAE + sync + statistic affine(paper)" : VQ_VAE(num_codes=num_codes, sync_nu=2.0, affine_lr=2.0, using_statistics=True, dim_z = dict_dim).cuda(),
+        "VQ_VAE + sync + learnable affine(paper)" : VQ_VAE(num_codes=num_codes, sync_nu=2.0, affine_lr=2.0, dim_z = dict_dim, beta=1.0, inplace_optimizer = inplace_optimizer1).cuda(),
+        #"VQ_VAE + sync + statistic affine(paper)" : VQ_VAE(num_codes=num_codes, sync_nu=2.0, affine_lr=2.0, using_statistics=True, dim_z = dict_dim, beta=1.0, inplace_optimizer = inplace_optimizer2).cuda(),
         #"VQ_VAE + learnable affine(paper)" : VQ_VAE(num_codes=num_codes, kmeans_init=True, affine_lr=2.0, dim_z = dict_dim).cuda(),
         #"VQ_VAE + statistic affine(paper)" : VQ_VAE(num_codes=num_codes, affine_lr=2.0, using_statistics=True, dim_z = dict_dim).cuda(),
         #"VQ_VAE + learnable affine std" : VQ_VAE(num_codes=num_codes, using_statistics=False, use_learnable_std=True, use_learnable_mean=False, dim_z = dict_dim).cuda(),
         #"VQ_VAE + learnable std" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, use_learnable_mean=False, dim_z=dict_dim).cuda(),
-        "VQ_VAE + learnable std + penalization" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, use_learnable_mean=False, dim_z=dict_dim, using_penalization=True).cuda(),
+        #"VQ_VAE + learn. std + t1" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, use_learnable_mean=False, dim_z=dict_dim, temperature_scheduler=t_sche1).cuda(),
+        "VQ_VAE + learn. std + t2" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, use_learnable_mean=False, dim_z=dict_dim, temperature_scheduler=t_sche2).cuda(),
+        # "VQ_VAE + learnable std + t3" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, use_learnable_mean=False, dim_z=dict_dim, temperature_scheduler=t_sche3).cuda(),
+        # VQ_VAE + learnable std + t4" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, use_learnable_mean=False, dim_z=dict_dim, temperature_scheduler=t_sche4).cuda(),
+        "VQ_VAE + learn. std + schedule learning rate" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, use_learnable_mean=False, dim_z=dict_dim, inner_learning_rate=learning_rate * 10).cuda(),
+        "VQ_VAE + learn. std + schedule learning rate + t2" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, use_learnable_mean=False, dim_z=dict_dim, temperature_scheduler=t_sche22, inner_learning_rate=learning_rate * 100).cuda(),
+        #"VQ_VAE + learnable std + penalization -(alpha)^2" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, dim_z=dict_dim, using_penalization=True).cuda(),
+        #"VQ_VAE + learnable std + penalization (1-alpha)^2" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, dim_z=dict_dim, using_penalization=True, alter_penalty="between1").cuda(),
         # "SQ-VAE" : GaussianSQVAE(config, True).cuda()
         }
 
 result = {}
 for key, value in dict.items():
-    optimizer = torch.optim.AdamW(value.parameters(), lr=learning_rate, weight_decay=weight_decay, betas=(0.9, 0.95))
+    if value.is_schedule_learning_rate():
+        base_params = filter(lambda p: id(p) not in map(id, value.get_inner_layer().parameters()), value.parameters())
+        optimizer = torch.optim.AdamW(
+            params=[
+                {"params" : base_params},
+                {"params" : value.get_inner_layer().parameters(), "lr":value.get_inner_learning_rate()}
+            ],
+            lr=learning_rate,
+            weight_decay=weight_decay,
+            betas=(0.9, 0.95)
+        )
+    else:
+        optimizer = torch.optim.AdamW(value.parameters(), lr=learning_rate, weight_decay=weight_decay, betas=(0.9, 0.95))
     scheduler = get_cosine_scheduler(optimizer, learning_rate, 1e-5, warm_epochs * len(train_loader), learning_rate, epochs * len(train_loader))
     train(value, key, optimizer, scheduler, train_loader, alpha=alpha, epochs=epochs)
     result[key] = test(value, test_loader, key)
@@ -267,7 +316,9 @@ for key, value in result.items():
     print(f'rec loss: {value["rec loss"]:.5f} | ' + \
             f'perplexity : {value["perplexity"]:.5f} | ' + \
             f'active %: {value["active %"]:.5f} | ' + \
-            f'lpips %: {value["lpips"]:.5f}')
+            f'lpips : {value["lpips"]:.5f}')
 
 my_plot.get_instance().already()
+my_plot.get_instance().save_fig()
 plt.show()
+print('seed:' + str(seed))

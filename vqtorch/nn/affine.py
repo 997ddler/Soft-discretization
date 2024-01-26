@@ -18,6 +18,7 @@ class AffineTransform(nn.Module):
 			use_learnable_mean=False,
 			lr_scale=1,
 			num_groups=1,
+			temperature_scheduler = None
 			):
 		super().__init__()
 
@@ -26,6 +27,11 @@ class AffineTransform(nn.Module):
 		self.use_learnable_std = use_learnable_std
 		self.use_learnable_mean = use_learnable_mean
 		self.alpha = None
+		self.mean = None
+		self.temperature = 1
+		if temperature_scheduler is not None:
+			self.temperature_scheduler = temperature_scheduler
+			self.temperature = self.temperature_scheduler.temperature
 		if use_running_statistics or use_learnable_std or use_learnable_mean:
 			self.momentum = momentum
 			self.register_buffer('running_statistics_initialized', torch.zeros(1))
@@ -81,6 +87,13 @@ class AffineTransform(nn.Module):
 		# self.running_ze_var = wd * self.running_ze_var
 		return
 
+	def get_inner_layer(self):
+		if self.use_learnable_std or self.use_learnable_mean:
+			return self.mlp_std
+		else:
+			raise Exception('inner layer is None')
+
+
 	def alpha_loss_1(self):
 		if self.use_learnable_std or self.use_learnable_mean:
 			return -(self.alpha ** 2).sum()  # ((1 - self.alpha) ** 2).mean()
@@ -93,15 +106,25 @@ class AffineTransform(nn.Module):
 		else:
 			return 1.0
 
+	def alpha_loss_3(self):
+		if self.use_learnable_std or self.use_learnable_mean:
+			return (self.alpha ** 2).sum()
+		else:
+			return 1.0
 
 	def forward(self, codebook):
+		if hasattr(self, 'temperature_scheduler'):
+			self.temperature = self.temperature_scheduler.calc_temperature()
 		scale0, bias0 = self.get_affine_params()
+		self.mean = bias0
 		if self.use_learnable_std:
 			input = torch.cat([codebook, torch.squeeze(scale0, 1), torch.squeeze(bias0, 1)], dim=0).T
 			scale = self.mlp_std(input).T.unsqueeze(1)
+			self.scale = scale.data ** self.temperature
 			self.alpha = scale.data
 		else:
 			scale = scale0
+			self.alpha = scale.data
 		if self.use_learnable_mean:
 			input = torch.cat([codebook, torch.squeeze(scale0, 1), torch.squeeze(bias0, 1)], dim=0).T
 			bias = self.mlp_mean(input).T.unsqueeze(1)
@@ -120,6 +143,9 @@ class AffineTransform(nn.Module):
 			scale = (1. + self.lr_scale * self.scale)
 			bias = self.lr_scale * self.bias
 		return scale.unsqueeze(1), bias.unsqueeze(1)
+
+	def get_last_mean(self):
+		return self.mean
 
 	def get_alpha(self):
 		return self.alpha
