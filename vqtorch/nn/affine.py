@@ -24,13 +24,13 @@ class AffineTransform(nn.Module):
 
 		self.use_running_statistics = use_running_statistics
 		self.num_groups = num_groups
+
 		self.use_learnable_std = use_learnable_std
-		if self.use_learnable_std:
-			self.arr_alpha0 = []
-			self.arr_alpha1 = []
-			self.arr_alpha_mean = []
-			self.alpha = None
-			self.mean = None
+		self.arr_alpha0 = []
+		self.arr_alpha1 = []
+		self.arr_alpha_mean = []
+		self.alpha = None
+		self.mean = None
 		self.use_learnable_mean = use_learnable_mean
 		self.temperature = 1
 		self.iter = 0
@@ -100,7 +100,7 @@ class AffineTransform(nn.Module):
 
 	def alpha_loss_1(self):
 		if self.use_learnable_std or self.use_learnable_mean:
-			return -10000 * (self.alpha ** 2).sum()
+			return -100 * (self.alpha ** 2).sum()
 		else:
 			return 1.0
 
@@ -118,7 +118,9 @@ class AffineTransform(nn.Module):
 			return 1.0
 
 	def get_dynamic_info(self):
-		return self.arr_alpha0, self.arr_alpha1, self.arr_alpha_mean
+		if self.use_learnable_std or self.use_learnable_mean:
+			return self.arr_alpha0, self.arr_alpha1, self.arr_alpha_mean
+		return None
 
 	def forward(self, codebook):
 		if hasattr(self, 'temperature_scheduler'):
@@ -139,9 +141,12 @@ class AffineTransform(nn.Module):
 			bias = self.mlp_mean(input).T.unsqueeze(1)
 		else:
 			bias = bias0
+		self.arr_alpha0.append(scale.data[0][0][0].detach().cpu().numpy())
+		self.arr_alpha1.append(scale.data[0][0][1].detach().cpu().numpy())
+		self.arr_alpha_mean.append(torch.mean(scale.data[0][0]).detach().cpu().numpy())
 		n, c = codebook.shape
 		codebook = codebook.view(self.num_groups, -1, codebook.shape[-1])
-		codebook = scale + codebook
+		codebook = bias + scale * codebook
 		return codebook.reshape(n, c), scale.data
 
 	def get_affine_params(self):

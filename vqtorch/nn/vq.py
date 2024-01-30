@@ -52,9 +52,8 @@ class VectorQuant(_VQBaseLayer):
 		super().__init__(feature_size, num_codes, **kwargs)
 		self.loss_fn, self.dist_fn = get_dist_fns('euclidean')
 		self.alter_penalty = alter_penalty
-
+		self.use_learnable_alpha = use_learnable_alpha
 		if use_learnable_alpha:
-			self.use_learnable_alpha = use_learnable_alpha
 			self.mlp_std = MLP(1024, 1, 256)
 			self.arr_alpha0 = []
 			self.arr_alpha1 = []
@@ -166,14 +165,13 @@ class VectorQuant(_VQBaseLayer):
 		return z_q, d, q
 
 	def alpha_loss(self):
-		# if hasattr(self, 'affine_transform'):
-		# 	if self.alter_penalty == 'small':
-		# 		return self.affine_transform.alpha_loss_3()
-		# 	elif self.alter_penalty == 'between1':
-		# 		return self.affine_transform.alpha_loss_2()
-		# 	else:
-		# 		return self.affine_transform.alpha_loss_1()
-		return -10 * (self.alpha ** 2).sum()
+		if hasattr(self, 'affine_transform'):
+			if self.alter_penalty == 'small':
+				return self.affine_transform.alpha_loss_3()
+			elif self.alter_penalty == 'between1':
+				return self.affine_transform.alpha_loss_2()
+			else:
+				return self.affine_transform.alpha_loss_1()
 
 	@torch.no_grad()
 	def get_codebook(self):

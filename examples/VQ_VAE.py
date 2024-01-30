@@ -163,10 +163,12 @@ def train(model, model_name, optimizer, scheduler = None, train_loader = None, a
     train_res_recon_error_smooth = savgol_filter(rec_losses, 201, 7)
     train_res_perplexity_smooth = savgol_filter(perplexities, 201, 7)
     lpips_losses = savgol_filter(lpips_losses, 201, 7)
-    alpha0, alpha1, alpha_mean = model.get_dynamic_info()
-    alpha0 = savgol_filter(alpha0, 201, 7)
-    alpha1 = savgol_filter(alpha1, 201, 7)
-    alpha_mean = savgol_filter(alpha_mean, 201, 7)
+
+    alpha_info = model.get_dynamic_info()
+    if alpha_info is not None:
+        alpha0 = savgol_filter(alpha_info, 201, 7)
+        alpha1 = savgol_filter(alpha_info, 201, 7)
+        alpha_mean = savgol_filter(alpha_info, 201, 7)
 
     # plot
     my_plot.get_instance().update(
@@ -177,9 +179,11 @@ def train(model, model_name, optimizer, scheduler = None, train_loader = None, a
     )
 
     last_mean = model.get_last_mean()
-    alpha_learnable = np.array(torch.squeeze(model.get_alpha()).detach().cpu().numpy())
-    my_plot.get_instance().plot_change_alpha([alpha0, alpha1, alpha_mean], model_name)
-    my_plot.get_instance().plot_alpha(alpha_learnable, model_name)
+    if alpha_info is not None:
+        alpha_learnable = np.array(torch.squeeze(model.get_alpha()).detach().cpu().numpy())
+        my_plot.get_instance().plot_change_alpha([alpha0, alpha1, alpha_mean], model_name)
+        my_plot.get_instance().plot_alpha(alpha_learnable, model_name)
+
     my_plot.get_instance().plot_tSNE(model.getcodebook().detach().cpu().numpy(), model_name, last_mean)
 
 
@@ -327,11 +331,11 @@ def run_model(times):
             #"VQ_VAE" : VQ_VAE(num_codes=num_codes).cuda(),
             #"VQ_STE++(learnable)" : VQ_VAE(num_codes=num_codes, sync_nu=2.0, affine_lr=2.0, dim_z = dict_dim, beta=1.0, inplace_optimizer = inplace_optimizer1).cuda(),
             #"VQ_STE++(statistical)" : VQ_VAE(num_codes=num_codes, sync_nu=2.0, affine_lr=2.0, using_statistics=True, dim_z = dict_dim, beta=1.0, inplace_optimizer = inplace_optimizer2).cuda(),
-            "SQ-VAE": GaussianSQVAE(config).cuda()
-            #"VQ_VAE + learn. alpha" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, dim_z=dict_dim).cuda(),
-            #"VQ_VAE + learn. alpha + schedule lr" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, use_learnable_mean=False, dim_z=dict_dim, inner_learning_rate=learning_rate * 10).cuda(),
-            #"VQ_VAE + learnable std + penalization -(alpha)^2" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, dim_z=dict_dim, using_penalization=True).cuda(),
-            #"VQ_VAE + learnable std + penalization (1-alpha)^2" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, dim_z=dict_dim, using_penalization=True, alter_penalty="between1").cuda(),
+            #"SQ-VAE": GaussianSQVAE(config).cuda(),
+            "VQ_VAE + learn. alpha" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, dim_z=dict_dim).cuda(),
+            "VQ_VAE + learn. alpha + schedule lr" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, use_learnable_mean=False, dim_z=dict_dim, inner_learning_rate=learning_rate * 10).cuda(),
+            "VQ_VAE + learnable std + penalization -(alpha)^2" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, dim_z=dict_dim, using_penalization=True).cuda(),
+            "VQ_VAE + learnable std + penalization (1-alpha)^2" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, dim_z=dict_dim, using_penalization=True, alter_penalty="between1").cuda(),
     }
 
     result = {}
@@ -350,7 +354,7 @@ def run_model(times):
         else:
             optimizer = torch.optim.AdamW(value.parameters(), lr=learning_rate, weight_decay=weight_decay, betas=(0.9, 0.95))
         scheduler = get_cosine_scheduler(optimizer, learning_rate, 1e-5, warm_epochs * len(train_loader), learning_rate, epochs * len(train_loader))
-        key = key + '~' + str(times) + '~'
+        key = key + '  ' + str(times)
         if isinstance(value, SQVAE):
             train_SQVAE(value, train_loader, optimizer, epochs, config, scheduler)
             result[key] = test(value, test_loader, key)
@@ -366,6 +370,7 @@ def run_model(times):
                 f'perplexity : {value["perplexity"]:.5f} | ' + \
                 f'active %: {value["active %"]:.5f} | ' + \
                 f'lpips : {value["lpips"]:.5f}')
+        print('\n-------------------------------Test End-----------------------------\n')
 
     my_plot.get_instance().already()
     my_plot.get_instance().save_fig()
