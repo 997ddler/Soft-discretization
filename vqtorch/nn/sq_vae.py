@@ -6,6 +6,7 @@ from vqtorch.nn.quantizer import GaussianVectorQuantizer, VmfVectorQuantizer
 import torch
 from vqtorch.nn.utils.third_party.ive import ive
 
+
 def weights_init(m):
     classname = m.__class__.__name__
     if classname.find("Conv") != -1:
@@ -14,16 +15,17 @@ def weights_init(m):
         nn.init.normal_(m.weight.data, 1.0, 0.02)
         nn.init.constant_(m.bias.data, 0)
 
+
 class SQVAE(nn.Module):
-    def __init__(self, cfgs, flgs):
+    def __init__(self, cfgs):
         super(SQVAE, self).__init__()
         # Data space
         self.dim_x = cfgs["dataset_space"]
 
         # Encoder/decoder
         self.param_var_q = cfgs["param_var_q"]
-        self.encoder = EncoderVqResnet32(cfgs["dict_dim"], 2, True, False)
-        self.decoder = DecoderVqResnet32(cfgs["dict_dim"], 2, True)
+        self.encoder = EncoderVqResnet32(cfgs["dict_dim"], 2, cfgs["flg_bn"], cfgs["flg_var_q"])
+        self.decoder = DecoderVqResnet32(cfgs["dict_dim"], 2, cfgs["flg_bn"])
         self.apply(weights_init)
 
         # Codebook
@@ -33,10 +35,10 @@ class SQVAE(nn.Module):
         self.log_param_q_scalar = nn.Parameter(torch.tensor(cfgs["log_param_q_init"]))
         if self.param_var_q == "vmf":
             self.quantizer = VmfVectorQuantizer(
-                self.size_dict, self.dim_dict, cfgs["temperature"])
+                self.size_dict, self.dim_dict, cfgs["temperature_init"])
         else:
             self.quantizer = GaussianVectorQuantizer(
-                self.size_dict, self.dim_dict, cfgs["temperature"], self.param_var_q)
+                self.size_dict, self.dim_dict, cfgs["temperature_init"], self.param_var_q)
 
     def forward(self, x, flg_train=False, flg_quant_det=True):
         # Encoding
@@ -76,10 +78,11 @@ class SQVAE(nn.Module):
     def _calc_loss(self):
         raise NotImplementedError()
 
+
 class GaussianSQVAE(SQVAE):
-    def __init__(self, cfgs, arelbo):
-        super(GaussianSQVAE, self).__init__(cfgs, arelbo)
-        self.flg_arelbo = arelbo  # Use MLE for optimization of decoder variance
+    def __init__(self, cfgs):
+        super(GaussianSQVAE, self).__init__(cfgs)
+        self.flg_arelbo = cfgs["arelbo"]  # Use MLE for optimization of decoder variance
         if not self.flg_arelbo:
             self.logvar_x = nn.Parameter(torch.tensor(np.log(0.1)))
 
@@ -87,6 +90,7 @@ class GaussianSQVAE(SQVAE):
         bs = x.shape[0]
         # Reconstruction loss
         mse = F.mse_loss(x_reconst, x, reduction="sum") / bs
+        mse_metrics = F.mse_loss(x_reconst.detach(), x.detach())
         if self.flg_arelbo:
             # "Preventing Posterior Collapse Induced by Oversmoothing in Gaussian VAE"
             # https://arxiv.org/abs/2102.08663
@@ -96,9 +100,9 @@ class GaussianSQVAE(SQVAE):
         # Entire loss
         loss_all = loss_reconst + loss_latent
         loss = dict(all=loss_all, mse=mse)
-        loss['rec_loss'] = loss_reconst
-        loss['active_ratio'] = -0.1
+        loss['rec_loss'] = mse_metrics
         return loss
+
 
 class VmfSQVAE(SQVAE):
     def __init__(self, cfgs, arelbo):

@@ -8,7 +8,7 @@ from vqtorch.norms import with_codebook_normalization
 from .vq_base import _VQBaseLayer
 from .affine import AffineTransform
 from .. import utils
-
+from vqtorch.nn.mlp import MLP
 
 class VectorQuant(_VQBaseLayer):
 	"""
@@ -45,12 +45,21 @@ class VectorQuant(_VQBaseLayer):
 			use_learnable_mean: bool = False,
 			alter_penalty : str = 'default',
 			temperature_scheduler = None,
+			use_learnable_alpha = False,
 			**kwargs,
 			):
 
 		super().__init__(feature_size, num_codes, **kwargs)
 		self.loss_fn, self.dist_fn = get_dist_fns('euclidean')
 		self.alter_penalty = alter_penalty
+
+		if use_learnable_alpha:
+			self.use_learnable_alpha = use_learnable_alpha
+			self.mlp_std = MLP(1024, 1, 256)
+			self.arr_alpha0 = []
+			self.arr_alpha1 = []
+			self.arr_alpha_mean = []
+			self.alpha = None
 
 		if beta < 0.0 or beta > 1.0:
 			raise ValueError(f'beta must be in [0, 1] but got {beta}')
@@ -79,6 +88,11 @@ class VectorQuant(_VQBaseLayer):
 		if replace_freq > 0:
 			vqtorch.nn.utils.lru_replacement(self, rho=0.01, timeout=replace_freq)
 		return
+
+	def get_dynamic_info(self):
+		if hasattr(self, 'affine_transform'):
+			return self.affine_transform.get_dynamic_info()
+		return None
 
 
 	def straight_through_approximation(self, z, z_q):
@@ -131,6 +145,14 @@ class VectorQuant(_VQBaseLayer):
 
 		z_q = F.embedding(q, codebook)
 
+		if self.use_learnable_alpha:
+			alpha = self.mlp_std(codebook.T).T.unsqueeze(1)
+			z_q = z_q + alpha.data
+			self.alpha = alpha.data
+			self.arr_alpha0.append(alpha.data[0][0][0].detach().cpu().numpy())
+			self.arr_alpha1.append(alpha.data[0][0][1].detach().cpu().numpy())
+			self.arr_alpha_mean.append(torch.mean(alpha.data[0][0]).detach().cpu().numpy())
+
 		if self.training and hasattr(self, 'inplace_codebook_optimizer'):
 			# update codebook inplace 
 			((z_q - z.detach()) ** 2).mean().backward(retain_graph=True)
@@ -144,14 +166,14 @@ class VectorQuant(_VQBaseLayer):
 		return z_q, d, q
 
 	def alpha_loss(self):
-		if hasattr(self, 'affine_transform'):
-			if self.alter_penalty == 'small':
-				return self.affine_transform.alpha_loss_3()
-			elif self.alter_penalty == 'between1':
-				return self.affine_transform.alpha_loss_2()
-			else:
-				return self.affine_transform.alpha_loss_1()
-		return 1.0
+		# if hasattr(self, 'affine_transform'):
+		# 	if self.alter_penalty == 'small':
+		# 		return self.affine_transform.alpha_loss_3()
+		# 	elif self.alter_penalty == 'between1':
+		# 		return self.affine_transform.alpha_loss_2()
+		# 	else:
+		# 		return self.affine_transform.alpha_loss_1()
+		return -10 * (self.alpha ** 2).sum()
 
 	@torch.no_grad()
 	def get_codebook(self):
@@ -164,6 +186,7 @@ class VectorQuant(_VQBaseLayer):
 	def get_alpha(self):
 		if hasattr(self, 'affine_transform'):
 			return self.affine_transform.get_alpha()
+		return None
 
 	def get_codebook_affine_params(self):
 		if hasattr(self, 'affine_transform'):
@@ -190,8 +213,8 @@ class VectorQuant(_VQBaseLayer):
 		z_q, d, q = self.quantize(self.codebook.weight, z)
 
 		e_mean = F.one_hot(q, num_classes=self.num_codes).view(-1, self.num_codes).float().mean(0)
-		# perplexity = torch.exp(-torch.sum(e_mean * torch.log(e_mean + 1e-10)))
-		perplexity = 2 ** (-torch.sum(e_mean * torch.log2(e_mean + 1e-10)))
+		perplexity = torch.exp(-torch.sum(e_mean * torch.log(e_mean + 1e-7)))
+		# perplexity = 2 ** (-torch.sum(e_mean * torch.log2(e_mean + 1e-10)))
 		active_ratio = q.unique().numel() / self.num_codes * 100
 
 		to_return = {

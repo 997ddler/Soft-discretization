@@ -86,6 +86,7 @@ class GaussianVectorQuantizer(VectorQuantizer):
         kld_discrete = torch.sum(probabilities * log_probabilities, dim=(0,1)) / bs
         kld_continuous = self._calc_distance_bw_enc_dec(z_from_encoder, z_to_decoder, 0.5 * precision_q).mean()
         loss = kld_discrete + kld_continuous
+        # perplexity = 2 ** (-torch.sum(avg_probs * torch.log2(avg_probs + 1e-10)))
         perplexity = torch.exp(-torch.sum(avg_probs * torch.log(avg_probs + 1e-7)))
 
         return z_to_decoder, loss, perplexity

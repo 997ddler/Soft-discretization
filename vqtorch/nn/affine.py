@@ -25,10 +25,15 @@ class AffineTransform(nn.Module):
 		self.use_running_statistics = use_running_statistics
 		self.num_groups = num_groups
 		self.use_learnable_std = use_learnable_std
+		if self.use_learnable_std:
+			self.arr_alpha0 = []
+			self.arr_alpha1 = []
+			self.arr_alpha_mean = []
+			self.alpha = None
+			self.mean = None
 		self.use_learnable_mean = use_learnable_mean
-		self.alpha = None
-		self.mean = None
 		self.temperature = 1
+		self.iter = 0
 		if temperature_scheduler is not None:
 			self.temperature_scheduler = temperature_scheduler
 			self.temperature = self.temperature_scheduler.temperature
@@ -41,9 +46,9 @@ class AffineTransform(nn.Module):
 			self.register_buffer('running_c_mean', torch.zeros(num_groups, feature_size))
 			self.register_buffer('running_c_var', torch.ones(num_groups, feature_size))
 			if use_learnable_std:
-				self.mlp_std = MLP(1026, 1, 256)
+				self.mlp_std = MLP(1024, 1, 256)
 			if use_learnable_mean:
-				self.mlp_mean = MLP(1026, 1, 256)
+				self.mlp_mean = MLP(1024, 1, 256)
 		else:
 			self.scale = nn.parameter.Parameter(torch.zeros(num_groups, feature_size))
 			self.bias = nn.parameter.Parameter(torch.zeros(num_groups, feature_size))
@@ -59,7 +64,6 @@ class AffineTransform(nn.Module):
 		# for most model architecture, some model architectures that don't
 		# have normalized bottlenecks, can cause it to eventually explode.
         # placing the VQ layer in certain layers of ViT exhibits this behavior
-
 
 		if self.training and (self.use_running_statistics or self.use_learnable_std or self.use_learnable_mean):
 			unbiased = False
@@ -96,7 +100,7 @@ class AffineTransform(nn.Module):
 
 	def alpha_loss_1(self):
 		if self.use_learnable_std or self.use_learnable_mean:
-			return -(self.alpha ** 2).sum()  # ((1 - self.alpha) ** 2).mean()
+			return -10000 * (self.alpha ** 2).sum()
 		else:
 			return 1.0
 
@@ -108,9 +112,13 @@ class AffineTransform(nn.Module):
 
 	def alpha_loss_3(self):
 		if self.use_learnable_std or self.use_learnable_mean:
-			return (self.alpha ** 2).sum()
+			self.iter = self.iter + 1
+			return -self.iter * 0.5 * (self.alpha ** 2).sum()
 		else:
 			return 1.0
+
+	def get_dynamic_info(self):
+		return self.arr_alpha0, self.arr_alpha1, self.arr_alpha_mean
 
 	def forward(self, codebook):
 		if hasattr(self, 'temperature_scheduler'):
@@ -118,7 +126,8 @@ class AffineTransform(nn.Module):
 		scale0, bias0 = self.get_affine_params()
 		self.mean = bias0
 		if self.use_learnable_std:
-			input = torch.cat([codebook, torch.squeeze(scale0, 1), torch.squeeze(bias0, 1)], dim=0).T
+			# input = torch.cat([codebook, torch.squeeze(scale0, 1), torch.squeeze(bias0, 1)], dim=0).T
+			input = codebook.T
 			scale = self.mlp_std(input).T.unsqueeze(1)
 			self.scale = scale.data ** self.temperature
 			self.alpha = scale.data
@@ -132,7 +141,7 @@ class AffineTransform(nn.Module):
 			bias = bias0
 		n, c = codebook.shape
 		codebook = codebook.view(self.num_groups, -1, codebook.shape[-1])
-		codebook = scale * codebook + bias
+		codebook = scale + codebook
 		return codebook.reshape(n, c), scale.data
 
 	def get_affine_params(self):

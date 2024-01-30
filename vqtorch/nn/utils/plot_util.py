@@ -16,10 +16,6 @@ class my_plot():
         self._loss.set_title('Smoothed NMSE.')
         self._loss.set_xlabel('iteration')
 
-        # self._active = self._fig.add_subplot(1, 5, 3)
-        # self._active.set_title('Active Ratio.')
-        # self._active.set_xlabel('iteration')
-
         self._lpips = self._fig.add_subplot(1, 3, 3)
         self._lpips.set_yscale('log')
         self._lpips.set_title('LPIPS.')
@@ -31,39 +27,40 @@ class my_plot():
         self._labels = []
         return
 
-    def update(self, perplexity, loss, active, lpips, alpha, model_name=None):
+    def update(self, perplexity, loss, lpips, model_name=None):
         if model_name is None:
             raise ValueError("model_name is None")
         self._handle.append(self._perplexity.plot(perplexity, label=model_name))
         self._loss.plot(loss)
-        # self._active.plot(active)
         self._lpips.plot(lpips)
         self._labels.append(model_name)
-        if alpha is not None:
-            plt.figure(figsize=(8, 8))
 
-            # median and mean
-            median_alpha = np.median(alpha)
-            mean_alpha = np.mean(alpha)
-            variance_alpha = np.var(alpha)
+    def plot_alpha(self, alpha, model_name):
+        plt.figure(figsize=(8, 8))
 
-            plt.axhline(y=median_alpha, color='g', linestyle='--', label=f'Median ({median_alpha:.2f})')
-            plt.axhline(y=mean_alpha, color='y', linestyle='-', label=f'Mean ({mean_alpha:.2f})')
+        # median and mean
+        median_alpha = np.median(alpha)
+        mean_alpha = np.mean(alpha)
+        variance_alpha = np.var(alpha)
 
-            # color
-            color = ['b' if val >= 0.0 else 'r' for val in alpha]
-            alpha = np.abs(alpha)
-            plt.bar(x=np.arange(len(alpha)), height=np.abs(alpha), color=color)
-            plt.plot([], [], ' ', label=f'Variance ({variance_alpha:.2f})')
+        # color
+        color = ['b' if val >= 0.0 else 'r' for val in alpha]
+        alpha = np.abs(alpha)
+        absolute_mean_alpha = np.mean(alpha)
+        plt.axhline(y=median_alpha, color='g', linestyle='--', label=f'Median ({median_alpha:.2f})')
+        plt.axhline(y=mean_alpha, color='y', linestyle='-', label=f'Mean ({mean_alpha:.2f})')
 
-            plt.xlabel('Index')
-            plt.ylabel('Alpha Value')
+        plt.bar(x=np.arange(len(alpha)), height=np.abs(alpha), color=color)
+        plt.plot([], [], ' ', label=f'Variance ({variance_alpha:.2f})')
+        plt.plot([], [], ' ', label=f'Absolute Mean({absolute_mean_alpha:.2f})')
 
-            plt.legend(loc='upper right')
-            plt.title(model_name)
-            plt.bar(x=np.arange(0, len(alpha)), height=alpha, color=color)
-            plt.savefig('D:/discrete representation/vqtorch-main/Experiments/alpha' + '(' + model_name + ')' + '.png')
+        plt.xlabel('Index')
+        plt.ylabel('Alpha Value')
 
+        plt.legend(loc='upper right')
+        plt.title(model_name)
+        plt.bar(x=np.arange(0, len(alpha)), height=alpha, color=color)
+        plt.savefig('D:/discrete representation/vqtorch-main/Experiments/alpha' + '(' + model_name + ')' + '.png')
 
     def plot_tSNE(self, vectors, model_name = None, last_mean = None):
         mean = np.mean(vectors, axis=0)
@@ -90,6 +87,15 @@ class my_plot():
 
     def already(self):
         self._fig.legend(loc='upper left', bbox_to_anchor=(0.0, 1.0), fontsize='small')
+
+    def plot_change_alpha(self, alpha_info, model_name):
+        plt.figure(figsize=(8, 8))
+        plt.plot(alpha_info[0], label='alpha0')
+        plt.plot(alpha_info[1], label='alpha1')
+        plt.plot(alpha_info[2], label='alpha_mean')
+        plt.legend(loc='upper left')
+        plt.title(model_name)
+        plt.savefig('D:/discrete representation/vqtorch-main/Experiments/Alpha Change' + '(' + model_name + ')' + '.png')
 
     @classmethod
     def get_instance(cls):
