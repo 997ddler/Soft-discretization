@@ -166,9 +166,9 @@ def train(model, model_name, optimizer, scheduler = None, train_loader = None, a
 
     alpha_info = model.get_dynamic_info()
     if alpha_info is not None:
-        alpha0 = savgol_filter(alpha_info, 201, 7)
-        alpha1 = savgol_filter(alpha_info, 201, 7)
-        alpha_mean = savgol_filter(alpha_info, 201, 7)
+        alpha0 = savgol_filter(alpha_info[0], 201, 7)
+        alpha1 = savgol_filter(alpha_info[1], 201, 7)
+        alpha_mean = savgol_filter(alpha_info[2], 201, 7)
 
     # plot
     my_plot.get_instance().update(
@@ -361,6 +361,7 @@ def run_model(times):
         else:
             train(value, key, optimizer, scheduler, train_loader, alpha=alpha, epochs=epochs)
             result[key] = test(value, test_loader, key)
+        print('\n-------------------------------Test End-----------------------------\n')
 
 
     print('\n------------------------------Result ------------------------------\n')
@@ -370,7 +371,6 @@ def run_model(times):
                 f'perplexity : {value["perplexity"]:.5f} | ' + \
                 f'active %: {value["active %"]:.5f} | ' + \
                 f'lpips : {value["lpips"]:.5f}')
-        print('\n-------------------------------Test End-----------------------------\n')
 
     my_plot.get_instance().already()
     my_plot.get_instance().save_fig()
