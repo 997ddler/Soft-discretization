@@ -46,9 +46,9 @@ class AffineTransform(nn.Module):
 			self.register_buffer('running_c_mean', torch.zeros(num_groups, feature_size))
 			self.register_buffer('running_c_var', torch.ones(num_groups, feature_size))
 			if use_learnable_std:
-				self.mlp_std = MLP(1024, 1, 256)
+				self.mlp_std = MLP(1026, 1, 256)
 			if use_learnable_mean:
-				self.mlp_mean = MLP(1024, 1, 256)
+				self.mlp_mean = MLP(1026, 1, 256)
 		else:
 			self.scale = nn.parameter.Parameter(torch.zeros(num_groups, feature_size))
 			self.bias = nn.parameter.Parameter(torch.zeros(num_groups, feature_size))
@@ -97,10 +97,9 @@ class AffineTransform(nn.Module):
 		else:
 			raise Exception('inner layer is None')
 
-
 	def alpha_loss_1(self):
 		if self.use_learnable_std or self.use_learnable_mean:
-			return -100 * (self.alpha ** 2).sum()
+			return - (self.alpha ** 2).sum()
 		else:
 			return 1.0
 
@@ -128,8 +127,8 @@ class AffineTransform(nn.Module):
 		scale0, bias0 = self.get_affine_params()
 		self.mean = bias0
 		if self.use_learnable_std:
-			# input = torch.cat([codebook, torch.squeeze(scale0, 1), torch.squeeze(bias0, 1)], dim=0).T
-			input = codebook.T
+			input = torch.cat([codebook, torch.squeeze(scale0, 1), torch.squeeze(bias0, 1)], dim=0).T
+			# input = codebook.T
 			scale = self.mlp_std(input).T.unsqueeze(1)
 			self.scale = scale.data ** self.temperature
 			self.alpha = scale.data

@@ -211,7 +211,7 @@ class VectorQuant(_VQBaseLayer):
 		z_q, d, q = self.quantize(self.codebook.weight, z)
 
 		e_mean = F.one_hot(q, num_classes=self.num_codes).view(-1, self.num_codes).float().mean(0)
-		perplexity = torch.exp(-torch.sum(e_mean * torch.log(e_mean + 1e-7)))
+		perplexity = torch.exp(-torch.sum(e_mean * torch.log(e_mean + 1e-10)))
 		# perplexity = 2 ** (-torch.sum(e_mean * torch.log2(e_mean + 1e-10)))
 		active_ratio = q.unique().numel() / self.num_codes * 100
 

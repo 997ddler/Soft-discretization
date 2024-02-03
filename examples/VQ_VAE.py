@@ -290,6 +290,7 @@ def load_dataset(batch_size = 256):
 
     return train_loader, test_loader
 
+
 def run_model(times):
     print('\n------------------------------Start ------------------------------\n')
     seed = random.randint(0, 1000000)
@@ -304,9 +305,9 @@ def run_model(times):
     train_loader, test_loader = load_dataset(batch_size)
     num_codes = 1024
     learning_rate = 1e-4
-    epochs = 1
+    epochs = 90
     alpha = 5
-    warm_epochs = 0
+    warm_epochs = 10
     weight_decay = 1e-4
     dict_dim = 64
 
@@ -328,14 +329,14 @@ def run_model(times):
     inplace_optimizer1 = lambda *args, **kwargs: torch.optim.AdamW(*args, **kwargs, lr=learning_rate, weight_decay=weight_decay, betas=(0.9, 0.95))
     inplace_optimizer2 = lambda *args, **kwargs: torch.optim.AdamW(*args, **kwargs, lr=learning_rate, weight_decay=weight_decay, betas=(0.9, 0.95))
     dict = {
-            #"VQ_VAE" : VQ_VAE(num_codes=num_codes).cuda(),
-            #"VQ_STE++(learnable)" : VQ_VAE(num_codes=num_codes, sync_nu=2.0, affine_lr=2.0, dim_z = dict_dim, beta=1.0, inplace_optimizer = inplace_optimizer1).cuda(),
-            #"VQ_STE++(statistical)" : VQ_VAE(num_codes=num_codes, sync_nu=2.0, affine_lr=2.0, using_statistics=True, dim_z = dict_dim, beta=1.0, inplace_optimizer = inplace_optimizer2).cuda(),
-            #"SQ-VAE": GaussianSQVAE(config).cuda(),
-            "VQ_VAE + learn. alpha" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, dim_z=dict_dim).cuda(),
-            "VQ_VAE + learn. alpha + schedule lr" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, use_learnable_mean=False, dim_z=dict_dim, inner_learning_rate=learning_rate * 10).cuda(),
-            "VQ_VAE + learnable std + penalization -(alpha)^2" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, dim_z=dict_dim, using_penalization=True).cuda(),
-            "VQ_VAE + learnable std + penalization (1-alpha)^2" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, dim_z=dict_dim, using_penalization=True, alter_penalty="between1").cuda(),
+            # "VQ_VAE" : VQ_VAE(num_codes=num_codes).cuda(),
+            # "VQ_STE++(learnable)" : VQ_VAE(num_codes=num_codes, sync_nu=2.0, affine_lr=2.0, dim_z = dict_dim, beta=1.0, inplace_optimizer = inplace_optimizer1).cuda(),
+            # "VQ_STE++(statistical)" : VQ_VAE(num_codes=num_codes, sync_nu=2.0, affine_lr=2.0, using_statistics=True, dim_z = dict_dim, beta=1.0, inplace_optimizer = inplace_optimizer2).cuda(),
+            # "SQ-VAE": GaussianSQVAE(config).cuda(),
+            # "VQ_VAE + learn. alpha" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, dim_z=dict_dim).cuda(),
+             "VQ_VAE + learn. alpha + schedule lr" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, use_learnable_mean=False, dim_z=dict_dim, inner_learning_rate=learning_rate * 100).cuda(),
+            # "VQ_VAE + learnable std + penalization -(alpha)^2" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, dim_z=dict_dim, using_penalization=True).cuda(),
+            # "VQ_VAE + learnable std + penalization (1-alpha)^2" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, dim_z=dict_dim, using_penalization=True, alter_penalty="between1").cuda(),
     }
 
     result = {}
