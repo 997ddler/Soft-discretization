@@ -8,17 +8,15 @@ from scipy.signal import savgol_filter
 from torch import nn
 from torch.utils.data import DataLoader
 from torchvision import datasets
-from torchvision.datasets import ImageFolder
 from torchvision.transforms import transforms
 from torchvision.utils import make_grid
 
-from vqtorch.nn.utils.TinyImagenet import TinyImageNet
-from vqtorch.nn import VectorQuant
-from vqtorch.nn.resnet import EncoderVqResnet32, DecoderVqResnet32
+from semivq import VectorQuant
+from semivq.nn.resnet import EncoderVqResnet32, DecoderVqResnet32
 from torch.nn import functional as F
-from vqtorch.nn.utils.plot_util import my_plot
+from semivq.nn.utils.plot_util import my_plot
 import lpips as lpips
-from vqtorch.nn.sq_vae import GaussianSQVAE, SQVAE
+from semivq.nn.sq_vae import GaussianSQVAE,SQVAE
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -226,7 +224,8 @@ def test(model, test_loader, type = 'test'):
             perplexities.append(vq_out["perplexity"].cpu().numpy())
 
     print(f'rec loss: {np.mean(rec_losses):.5f} | ' + \
-            f'perplexity : {np.mean(perplexities):.5f} | ')
+            f'perplexity : {np.mean(perplexities):.5f} | ' + \
+            f'lpips : {np.mean(lpips_losses):.5f}')    
 
     test_dict = {
         'rec loss': np.mean(rec_losses),
@@ -264,10 +263,10 @@ def merge_datasets(dataset, sub_dataset):
 def load_dataset(batch_size = 256):
     transform = transforms.Compose([transforms.ToTensor(), transforms.Resize((32, 32))])
 
-    train_loader = DataLoader(datasets.CIFAR10(root='~/data/cifar', train=True, download=True, transform=transform), batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(datasets.CIFAR10(root='~/data/cifar', train=False, download=True, transform=transform), batch_size=batch_size, shuffle=True)
+    train_loader = DataLoader(datasets.CIFAR10(root='~/data/cifar', train=True, download=False, transform=transform), batch_size=batch_size, shuffle=True)
+    test_loader = DataLoader(datasets.CIFAR10(root='~/data/cifar', train=False, download=False, transform=transform), batch_size=batch_size, shuffle=True)
 
-    # path = "D:/discrete representation/vqtorch-main/img_align_celeba"
+    # path = "/home/data/img_align_celeba"
     #
     # data = ImageFolder(root=path, transform=transform)
     # train_data, test_data =torch.utils.data.random_split(data, [int(len(data) * 0.8), len(data) - int(0.8 * len(data))])
@@ -283,13 +282,13 @@ def load_dataset(batch_size = 256):
     #                         shuffle=True,
     #                         pin_memory=True)
     #
-    # path = "D:/discrete representation/vqtorch-main/tiny-imagenet-200"
-    # train_loader = DataLoader(TinyImageNet(path, True, transform), batch_size=batch_size, shuffle=True)
-    # test_loader = DataLoader(TinyImageNet(path, False, transform), batch_size=batch_size, shuffle=True)
+    #path = "/data/zwh/tiny-imagenet-200"
+    #train_loader = DataLoader(TinyImageNet(path, True, transform), batch_size=batch_size, shuffle=True)
+    #test_loader = DataLoader(TinyImageNet(path, False, transform), batch_size=batch_size, shuffle=True)
+    #print("\nTinyImagNet loading ....\n")
 
 
     return train_loader, test_loader
-
 
 def run_model(times):
     print('\n------------------------------Start ------------------------------\n')
@@ -329,14 +328,16 @@ def run_model(times):
     inplace_optimizer1 = lambda *args, **kwargs: torch.optim.AdamW(*args, **kwargs, lr=learning_rate, weight_decay=weight_decay, betas=(0.9, 0.95))
     inplace_optimizer2 = lambda *args, **kwargs: torch.optim.AdamW(*args, **kwargs, lr=learning_rate, weight_decay=weight_decay, betas=(0.9, 0.95))
     dict = {
-            # "VQ_VAE" : VQ_VAE(num_codes=num_codes).cuda(),
-            # "VQ_STE++(learnable)" : VQ_VAE(num_codes=num_codes, sync_nu=2.0, affine_lr=2.0, dim_z = dict_dim, beta=1.0, inplace_optimizer = inplace_optimizer1).cuda(),
-            # "VQ_STE++(statistical)" : VQ_VAE(num_codes=num_codes, sync_nu=2.0, affine_lr=2.0, using_statistics=True, dim_z = dict_dim, beta=1.0, inplace_optimizer = inplace_optimizer2).cuda(),
-            # "SQ-VAE": GaussianSQVAE(config).cuda(),
-            # "VQ_VAE + learn. alpha" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, dim_z=dict_dim).cuda(),
-             "VQ_VAE + learn. alpha + schedule lr" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, use_learnable_mean=False, dim_z=dict_dim, inner_learning_rate=learning_rate * 100).cuda(),
-            # "VQ_VAE + learnable std + penalization -(alpha)^2" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, dim_z=dict_dim, using_penalization=True).cuda(),
-            # "VQ_VAE + learnable std + penalization (1-alpha)^2" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, dim_z=dict_dim, using_penalization=True, alter_penalty="between1").cuda(),
+            "VQ_VAE" : VQ_VAE(num_codes=num_codes).cuda(),
+            #"VQ_STE++(learnable)" : VQ_VAE(num_codes=num_codes, sync_nu=2.0, affine_lr=2.0, dim_z = dict_dim, beta=1.0, inplace_optimizer = inplace_optimizer1).cuda(),
+            #"VQ_STE++(statistical)" : VQ_VAE(num_codes=num_codes, sync_nu=2.0, affine_lr=2.0, using_statistics=True, dim_z = dict_dim, beta=1.0, inplace_optimizer = inplace_optimizer2).cuda(),
+            #"SQ-VAE": GaussianSQVAE(config).cuda(),
+            #"VQ_VAE + learn. alpha" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, dim_z=dict_dim).cuda(),
+            #"VQ_VAE + learn. alpha + schedule lr" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, dim_z=dict_dim, inner_learning_rate=learning_rate * 10).cuda(),
+            #"VQ_VAE + learnable std + penalization -(alpha)^2" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, dim_z=dict_dim, using_penalization=True).cuda(),
+            #"VQ_VAE + learnable std + penalization (1-alpha)^2" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, dim_z=dict_dim, using_penalization=True, alter_penalty="between1").cuda(),
+            #"VQ_VAE + learn. gamma" : VQ_VAE(num_codes=num_codes, dim_z=dict_dim, use_learnable_gamma=True).cuda(),
+            "VQ_VAE + learn. gamma + personlize" : VQ_VAE(num_codes=num_codes, dim_z=dict_dim, use_learnable_gamma=True, gamma_policy='personalize').cuda()
     }
 
     result = {}
@@ -370,7 +371,6 @@ def run_model(times):
         print('\n-----' + key + '-----\n')
         print(f'rec loss: {value["rec loss"]:.5f} | ' + \
                 f'perplexity : {value["perplexity"]:.5f} | ' + \
-                f'active %: {value["active %"]:.5f} | ' + \
                 f'lpips : {value["lpips"]:.5f}')
 
     my_plot.get_instance().already()
