@@ -59,7 +59,6 @@ class VectorQuant(_VQBaseLayer):
 
 		self.beta = beta
 		self.nu = sync_nu
-		self.affine_lr = affine_lr
 		self.codebook = nn.Embedding(self.num_codes, self.feature_size)
 
 		if inplace_optimizer is not None:
@@ -77,7 +76,7 @@ class VectorQuant(_VQBaseLayer):
 				num_groups=affine_groups,
 			)
 		if replace_freq > 0:
-			vqtorch.nn.utils.lru_replacement(self, rho=0.01, timeout=replace_freq)
+			semivq.nn.utils.lru_replacement(self, rho=0.01, timeout=replace_freq)
 		return
 
 	def get_dynamic_info(self):

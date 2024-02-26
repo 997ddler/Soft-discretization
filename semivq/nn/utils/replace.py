@@ -1,7 +1,6 @@
 import torch
 
 
-
 class ReplaceLRU():
 	"""
 	Attributes:

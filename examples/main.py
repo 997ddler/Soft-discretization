@@ -1,5 +1,6 @@
-import VQ_VAE
-import os
+import torch.cuda
 
-for i in range(3):
+import VQ_VAE
+
+for i in range(1):
     VQ_VAE.run_model(i)

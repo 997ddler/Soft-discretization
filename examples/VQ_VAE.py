@@ -16,7 +16,9 @@ from semivq.nn.resnet import EncoderVqResnet32, DecoderVqResnet32
 from torch.nn import functional as F
 from semivq.nn.utils.plot_util import my_plot
 import lpips as lpips
-from semivq.nn.sq_vae import GaussianSQVAE,SQVAE
+from semivq.nn.sq_vae import SQVAE
+import semivq.nn.utils.replace as replace
+
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -118,7 +120,7 @@ def train_SQVAE(model, train_loader, optimizer, epochs, cfgs, scheduler):
         my_plot.get_instance().update(train_res_perplexity_smooth, train_res_recon_error_smooth, lpips_losses,"SQ-VAE")
 
 
-def train(model, model_name, optimizer, scheduler = None, train_loader = None, alpha=10, epochs = 15):
+def train(model, model_name, optimizer, scheduler=None, train_loader=None, alpha=10, epochs=15):
     i = 0
     rec_losses = []; perplexities = []; lpips_losses = []
     lpips_model = lpips.LPIPS(net='alex').cuda()
@@ -327,17 +329,59 @@ def run_model(times):
 
     inplace_optimizer1 = lambda *args, **kwargs: torch.optim.AdamW(*args, **kwargs, lr=learning_rate, weight_decay=weight_decay, betas=(0.9, 0.95))
     inplace_optimizer2 = lambda *args, **kwargs: torch.optim.AdamW(*args, **kwargs, lr=learning_rate, weight_decay=weight_decay, betas=(0.9, 0.95))
+    inplace_optimizer3 = lambda *args, **kwargs: torch.optim.AdamW(*args, **kwargs, lr=learning_rate, weight_decay=weight_decay, betas=(0.9, 0.95))
+    inplace_optimizer4 = lambda *args, **kwargs: torch.optim.AdamW(*args, **kwargs, lr=learning_rate, weight_decay=weight_decay, betas=(0.9, 0.95))
     dict = {
-            "VQ_VAE" : VQ_VAE(num_codes=num_codes).cuda(),
+            # "VQ_VAE" : VQ_VAE(num_codes=num_codes).cuda(),
             #"VQ_STE++(learnable)" : VQ_VAE(num_codes=num_codes, sync_nu=2.0, affine_lr=2.0, dim_z = dict_dim, beta=1.0, inplace_optimizer = inplace_optimizer1).cuda(),
-            #"VQ_STE++(statistical)" : VQ_VAE(num_codes=num_codes, sync_nu=2.0, affine_lr=2.0, using_statistics=True, dim_z = dict_dim, beta=1.0, inplace_optimizer = inplace_optimizer2).cuda(),
+            "VQ_STE++++" : VQ_VAE(
+                                num_codes=num_codes,
+                                sync_nu=2.0,
+                                affine_lr=2.0,
+                                dim_z=dict_dim,
+                                beta=1.0,
+                                inplace_optimizer=inplace_optimizer2,
+                                replace_freq=100,
+                                norm='l2',
+                                cb_norm='l2'
+            ).cuda(),
+            "VQ_STE++++ learn. alpha" : VQ_VAE(
+                                num_codes=num_codes,
+                                sync_nu=2.0,
+                                dim_z=dict_dim,
+                                # beta=1.0,
+                                # inplace_optimizer=inplace_optimizer3,
+                                use_learnable_std=True,
+                                replace_freq=100,
+                                norm='l2',
+                                cb_norm='l2'
+            ).cuda(),
+            "VQ ++ learn.alpha(LRU L2)" : VQ_VAE(
+                                num_codes=num_codes,
+                                dim_z=dict_dim,
+                                use_learnable_std=True,
+                                replace_freq=100,
+                                norm='l2',
+                                cb_norm='l2'
+            ).cuda(),
+            "VQ_STE++ learn.alpha(sync)": VQ_VAE(
+                num_codes=num_codes,
+                sync_nu=2.0,
+                dim_z=dict_dim,
+                use_learnable_std=True
+            ).cuda(),
+            "VQ learn.alpha": VQ_VAE(
+                num_codes=num_codes,
+                dim_z=dict_dim,
+                use_learnable_std=True
+            ).cuda(),
             #"SQ-VAE": GaussianSQVAE(config).cuda(),
             #"VQ_VAE + learn. alpha" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, dim_z=dict_dim).cuda(),
             #"VQ_VAE + learn. alpha + schedule lr" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, dim_z=dict_dim, inner_learning_rate=learning_rate * 10).cuda(),
             #"VQ_VAE + learnable std + penalization -(alpha)^2" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, dim_z=dict_dim, using_penalization=True).cuda(),
             #"VQ_VAE + learnable std + penalization (1-alpha)^2" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, dim_z=dict_dim, using_penalization=True, alter_penalty="between1").cuda(),
             #"VQ_VAE + learn. gamma" : VQ_VAE(num_codes=num_codes, dim_z=dict_dim, use_learnable_gamma=True).cuda(),
-            "VQ_VAE + learn. gamma + personlize" : VQ_VAE(num_codes=num_codes, dim_z=dict_dim, use_learnable_gamma=True, gamma_policy='personalize').cuda()
+            #"VQ_VAE + learn. gamma + personlize" : VQ_VAE(num_codes=num_codes, dim_z=dict_dim, use_learnable_gamma=True, gamma_policy='personalize').cuda()
     }
 
     result = {}
