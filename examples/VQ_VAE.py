@@ -17,7 +17,8 @@ from torch.nn import functional as F
 from semivq.nn.utils.plot_util import my_plot
 import lpips as lpips
 from semivq.nn.sq_vae import SQVAE
-import semivq.nn.utils.replace as replace
+from semivq.nn.utils.TinyImagenet import TinyImageNet
+
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -334,36 +335,6 @@ def run_model(times):
     dict = {
             # "VQ_VAE" : VQ_VAE(num_codes=num_codes).cuda(),
             #"VQ_STE++(learnable)" : VQ_VAE(num_codes=num_codes, sync_nu=2.0, affine_lr=2.0, dim_z = dict_dim, beta=1.0, inplace_optimizer = inplace_optimizer1).cuda(),
-            "VQ_STE++++" : VQ_VAE(
-                                num_codes=num_codes,
-                                sync_nu=2.0,
-                                affine_lr=2.0,
-                                dim_z=dict_dim,
-                                beta=1.0,
-                                inplace_optimizer=inplace_optimizer2,
-                                replace_freq=100,
-                                norm='l2',
-                                cb_norm='l2'
-            ).cuda(),
-            "VQ_STE++++ learn. alpha" : VQ_VAE(
-                                num_codes=num_codes,
-                                sync_nu=2.0,
-                                dim_z=dict_dim,
-                                # beta=1.0,
-                                # inplace_optimizer=inplace_optimizer3,
-                                use_learnable_std=True,
-                                replace_freq=100,
-                                norm='l2',
-                                cb_norm='l2'
-            ).cuda(),
-            "VQ ++ learn.alpha(LRU L2)" : VQ_VAE(
-                                num_codes=num_codes,
-                                dim_z=dict_dim,
-                                use_learnable_std=True,
-                                replace_freq=100,
-                                norm='l2',
-                                cb_norm='l2'
-            ).cuda(),
             "VQ_STE++ learn.alpha(sync)": VQ_VAE(
                 num_codes=num_codes,
                 sync_nu=2.0,
@@ -375,6 +346,38 @@ def run_model(times):
                 dim_z=dict_dim,
                 use_learnable_std=True
             ).cuda(),
+            "VQ_STE++++ learn. alpha": VQ_VAE(
+                num_codes=num_codes,
+                sync_nu=2.0,
+                dim_z=dict_dim,
+                # beta=1.0,
+                # inplace_optimizer=inplace_optimizer3,
+                use_learnable_std=True,
+                replace_freq=100,
+                norm='l2',
+                cb_norm='l2'
+            ).cuda(),
+            "VQ ++ learn.alpha(LRU L2)": VQ_VAE(
+                num_codes=num_codes,
+                dim_z=dict_dim,
+                use_learnable_std=True,
+                replace_freq=100,
+                norm='l2',
+                cb_norm='l2'
+            ).cuda(),
+            "VQ_STE++++" : VQ_VAE(
+                                num_codes=num_codes,
+                                sync_nu=2.0,
+                                affine_lr=2.0,
+                                dim_z=dict_dim,
+                                beta=1.0,
+                                inplace_optimizer=inplace_optimizer2,
+                                replace_freq=100,
+                                norm='l2',
+                                cb_norm='l2'
+            ).cuda(),
+
+
             #"SQ-VAE": GaussianSQVAE(config).cuda(),
             #"VQ_VAE + learn. alpha" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, dim_z=dict_dim).cuda(),
             #"VQ_VAE + learn. alpha + schedule lr" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, dim_z=dict_dim, inner_learning_rate=learning_rate * 10).cuda(),
