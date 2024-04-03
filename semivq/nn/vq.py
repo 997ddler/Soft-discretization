@@ -74,6 +74,7 @@ class VectorQuant(_VQBaseLayer):
 				use_learnable_std=use_learnable_std,
 				lr_scale=affine_lr,
 				num_groups=affine_groups,
+				codebook_size=self.num_codes
 			)
 		if replace_freq > 0:
 			semivq.nn.utils.lru_replacement(self, rho=0.01, timeout=replace_freq)
@@ -194,6 +195,11 @@ class VectorQuant(_VQBaseLayer):
 
 		z_q, d, q = self.quantize(self.codebook.weight, z)
 
+		######
+		# shape = z_q.view(-1, self.feature_size).shape[0]
+		# encodings = torch.zeros(shape, self.num_codes, device=z_q.device)
+		# encodings.scatter_(1, q.view(-1, 1), 1)
+
 		e_mean = F.one_hot(q, num_classes=self.num_codes).view(-1, self.num_codes).float().mean(0)
 		perplexity = torch.exp(-torch.sum(e_mean * torch.log(e_mean + 1e-7)))
 		active_ratio = q.unique().numel() / self.num_codes * 100
@@ -206,6 +212,7 @@ class VectorQuant(_VQBaseLayer):
 			'loss': self.compute_loss(z, z_q).mean(),
 			'perplexity': perplexity,
 			'active_ratio': active_ratio,
+			# 'encodings' : encodings
 		}
 
 		z_q = self.straight_through_approximation(z, z_q)

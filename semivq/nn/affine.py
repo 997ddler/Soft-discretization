@@ -17,7 +17,8 @@ class AffineTransform(nn.Module):
 			use_learnable_std=False,
 			lr_scale=1,
 			num_groups=1,
-
+			codebook_size=1024,
+			output_size=1
 			):
 		super().__init__()
 
@@ -30,7 +31,6 @@ class AffineTransform(nn.Module):
 		self.arr_alpha_mean = []
 		self.alpha = None
 		self.mean = None
-		self.iter = 0
 		if use_running_statistics or use_learnable_std:
 			self.momentum = momentum
 			self.register_buffer('running_statistics_initialized', torch.zeros(1))
@@ -40,7 +40,7 @@ class AffineTransform(nn.Module):
 			self.register_buffer('running_c_mean', torch.zeros(num_groups, feature_size))
 			self.register_buffer('running_c_var', torch.ones(num_groups, feature_size))
 			if use_learnable_std:
-				self.mlp_std = MLP(1026, 1, 256)
+				self.mlp_std = MLP(codebook_size + 2, output_size, codebook_size // 4)
 		else:
 			self.scale = nn.parameter.Parameter(torch.zeros(num_groups, feature_size))
 			self.bias = nn.parameter.Parameter(torch.zeros(num_groups, feature_size))
