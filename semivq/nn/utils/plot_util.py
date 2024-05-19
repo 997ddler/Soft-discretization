@@ -25,6 +25,7 @@ class my_plot():
 
         self._handle = []
         self._labels = []
+        self.file_dir = 'Experiments_cifar_fix'
         return
 
     def update(self, perplexity, loss, lpips, model_name=None):
@@ -60,7 +61,7 @@ class my_plot():
         plt.legend(loc='upper right')
         plt.title(model_name)
         plt.bar(x=np.arange(0, len(alpha)), height=alpha, color=color)
-        plt.savefig('../Experiments/alpha' + '(' + model_name + ')' + '.png')
+        plt.savefig('../' + self.file_dir + '/alpha' + '(' + model_name + ')' + '.png')
 
     def plot_tSNE(self, vectors, model_name = None, last_mean = None):
         mean = np.mean(vectors, axis=0)
@@ -80,10 +81,10 @@ class my_plot():
             plt.scatter(Y[:end, 0], Y[:end, 1], c='red')
             plt.scatter(Y[end, 0], Y[end, 1], c='blue')
             plt.scatter(Y[end + 1, 0], Y[end + 1, 1], c='k')
-        plt.savefig('../Experiments/tSNE' + model_name + '.png')
+        plt.savefig('../' + self.file_dir + '/tSNE' + model_name + '.png')
 
     def save_fig(self):
-        self._fig.savefig('../Experiments/training_loss.png')
+        self._fig.savefig('../' + self.file_dir + '/training_loss.png')
 
     def already(self):
         self._fig.legend(loc='upper left', bbox_to_anchor=(0.0, 1.0), fontsize='small')
@@ -95,7 +96,7 @@ class my_plot():
         plt.plot(alpha_info[2], label='alpha_mean')
         plt.legend(loc='upper left')
         plt.title(model_name)
-        plt.savefig('../Experiments/Alpha Change' + '(' + model_name + ')' + '.png')
+        plt.savefig('../' + self.file_dir + '/Alpha Change' + '(' + model_name + ')' + '.png')
 
     @classmethod
     def get_instance(cls):

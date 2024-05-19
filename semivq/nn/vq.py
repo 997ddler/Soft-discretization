@@ -139,7 +139,7 @@ class VectorQuant(_VQBaseLayer):
 
 		if self.training and hasattr(self, 'inplace_codebook_optimizer'):
 			# update codebook inplace 
-			((z_q - z.detach()) ** 2).mean().backward(retain_graph=True)
+			(5 * ((z_q - z.detach()) ** 2)).mean().backward(retain_graph=True)
 			self.inplace_codebook_optimizer.step()
 			self.inplace_codebook_optimizer.zero_grad()
 
@@ -161,8 +161,8 @@ class VectorQuant(_VQBaseLayer):
 	@torch.no_grad()
 	def get_codebook(self):
 		cb = self.codebook.weight
-		# if hasattr(self, 'affine_transform'):
-		# 	cb = self.affine_transform(cb)
+		if hasattr(self, 'affine_transform'):
+		 	cb, _ = self.affine_transform(cb)
 		return cb
 
 	@torch.no_grad()

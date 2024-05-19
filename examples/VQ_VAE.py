@@ -41,6 +41,9 @@ class VQ_VAE(nn.Module):
         self._decoder = DecoderVqResnet32(dim_z, num_rb, flg_bn)
         self.using_penalization = using_penalization
         self.inner_learning_rate = inner_learning_rate
+        self._ignore_cmtloss = False
+        if 'inplace_optimizer' in vq_kwargs and vq_kwargs['inplace_optimizer'] != None:
+            self._ignore_cmtloss = True
         return
 
     def forward(self, x):
@@ -48,6 +51,9 @@ class VQ_VAE(nn.Module):
         out, vq_dict = self._vq(out)
         out = self._decoder(out)
         return out, vq_dict, None
+
+    def ignore_cmtloss(self):
+        return self._ignore_cmtloss
 
     def get_alpha(self):
         return self._vq.get_alpha()
@@ -123,7 +129,7 @@ def train_SQVAE(model, train_loader, optimizer, epochs, cfgs, scheduler):
 
 def train(model, model_name, optimizer, scheduler=None, train_loader=None, alpha=10, epochs=15):
     i = 0
-    rec_losses = []; perplexities = []; lpips_losses = []
+    rec_losses = []; perplexities = []; lpips_losses = []; cmt_losses = []
     lpips_model = lpips.LPIPS(net='alex').cuda()
     model.train()
     for epoch in range(epochs):
@@ -138,13 +144,17 @@ def train(model, model_name, optimizer, scheduler=None, train_loader=None, alpha
             lpips_loss = lpips_model(image, out).mean()
             rec_loss = F.mse_loss(out, image)
             cmt_loss = vq_out['loss']
-            loss = rec_loss + alpha * cmt_loss + lpips_loss
+            if model.ignore_cmtloss:
+                loss = rec_loss + lpips_loss
+            else:
+                loss = rec_loss + alpha * cmt_loss + lpips_loss
             if model.using_penalization:
                 loss += model.alpha_loss()
 
             # backward
-            loss.backward()
-            optimizer.step()
+            with torch.autograd.set_detect_anomaly(True):
+                loss.backward()
+                optimizer.step()
 
             scheduler.step()
             i += 1
@@ -153,9 +163,11 @@ def train(model, model_name, optimizer, scheduler=None, train_loader=None, alpha
             lpips_losses.append(lpips_loss.item()) 
             rec_losses.append(rec_loss.item())
             perplexities.append(vq_out["perplexity"].cpu().numpy())
+            cmt_losses.append(cmt_loss.item())
             if i % 100 == 0:
                 print(f'rec loss: {np.mean(rec_losses[-100 : ]):.5f} | ' + \
                       f'perplexity %: {np.mean(perplexities[-100 : ]):.5f} | ' + \
+                      f'cmt %: {np.mean(cmt_losses[-100 : ]):.5f} | ' + \
                       f'lpips %: {np.mean(lpips_losses[-100 : ]):.5f}'
                       )
 
@@ -204,6 +216,7 @@ def test(model, test_loader, type = 'test'):
             fig = plt.imshow(np.transpose(npimg, (1, 2, 0)), interpolation='nearest')
             fig.axes.get_xaxis().set_visible(False)
             fig.axes.get_yaxis().set_visible(False)
+            plt.imsave('/home/zwh/Soft-discretization/Experiments_cifar_fix' + '/' + str(type) + '.png')
 
     print('\n ------------------------------Test begin ------------------------------\n')
 
@@ -266,10 +279,10 @@ def merge_datasets(dataset, sub_dataset):
 def load_dataset(batch_size = 256):
     transform = transforms.Compose([transforms.ToTensor(), transforms.Resize((32, 32))])
 
-    train_loader = DataLoader(datasets.CIFAR10(root='~/data/cifar', train=True, download=False, transform=transform), batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(datasets.CIFAR10(root='~/data/cifar', train=False, download=False, transform=transform), batch_size=batch_size, shuffle=True)
+    train_loader = DataLoader(datasets.CIFAR10(root='/data/zwh', train=True, download=True, transform=transform), batch_size=batch_size, shuffle=True)
+    test_loader = DataLoader(datasets.CIFAR10(root='/data/zwh', train=False, download=True, transform=transform), batch_size=batch_size, shuffle=True)
 
-    # path = "/home/data/img_align_celeba"
+    # path = "/data/zwh/img_align_celeba"
     #
     # data = ImageFolder(root=path, transform=transform)
     # train_data, test_data =torch.utils.data.random_split(data, [int(len(data) * 0.8), len(data) - int(0.8 * len(data))])
@@ -308,8 +321,8 @@ def run_model(times):
     num_codes = 1024
     learning_rate = 1e-4
     epochs = 90
-    alpha = 5
-    warm_epochs = 10
+    alpha = 1.0
+    warm_epochs = 0
     weight_decay = 1e-4
     dict_dim = 64
 
@@ -328,43 +341,50 @@ def run_model(times):
         "flg_bn" : True,
     }
 
-    inplace_optimizer1 = lambda *args, **kwargs: torch.optim.AdamW(*args, **kwargs, lr=learning_rate, weight_decay=weight_decay, betas=(0.9, 0.95))
-    inplace_optimizer2 = lambda *args, **kwargs: torch.optim.AdamW(*args, **kwargs, lr=learning_rate, weight_decay=weight_decay, betas=(0.9, 0.95))
-    inplace_optimizer3 = lambda *args, **kwargs: torch.optim.AdamW(*args, **kwargs, lr=learning_rate, weight_decay=weight_decay, betas=(0.9, 0.95))
-    inplace_optimizer4 = lambda *args, **kwargs: torch.optim.AdamW(*args, **kwargs, lr=learning_rate, weight_decay=weight_decay, betas=(0.9, 0.95))
+    inplace_optimizer1 = lambda *args, **kwargs: torch.optim.SGD(*args, **kwargs, lr=10.0, momentum=0.9)
+    inplace_optimizer2 = lambda *args, **kwargs: torch.optim.SGD(*args, **kwargs, lr=10.0, momentum=0.9)
+    inplace_optimizer3 = lambda *args, **kwargs: torch.optim.SGD(*args, **kwargs, lr=0.1, momentum=0.9)
+    inplace_optimizer4 = lambda *args, **kwargs: torch.optim.SGD(*args, **kwargs, lr=0.1, momentum=0.9)
     dict = {
             # "VQ_VAE" : VQ_VAE(num_codes=num_codes).cuda(),
-            #"VQ_STE++(learnable)" : VQ_VAE(num_codes=num_codes, sync_nu=2.0, affine_lr=2.0, dim_z = dict_dim, beta=1.0, inplace_optimizer = inplace_optimizer1).cuda(),
-            "VQ_STE++ learn.alpha(sync)": VQ_VAE(
-                num_codes=num_codes,
-                sync_nu=2.0,
-                dim_z=dict_dim,
-                use_learnable_std=True
-            ).cuda(),
-            "VQ learn.alpha": VQ_VAE(
-                num_codes=num_codes,
-                dim_z=dict_dim,
-                use_learnable_std=True
-            ).cuda(),
-            "VQ_STE++++ learn. alpha": VQ_VAE(
-                num_codes=num_codes,
-                sync_nu=2.0,
-                dim_z=dict_dim,
+            "VQ_STE++(learnable)" : VQ_VAE(num_codes=num_codes, sync_nu=2.0, affine_lr=2.0, dim_z = dict_dim, beta=1.0, inplace_optimizer = inplace_optimizer1).cuda(),
+            #"VQ_STE++ learn.alpha(sync)": VQ_VAE(
+            #    num_codes=num_codes,
+            #    sync_nu=2.0,
+            #    dim_z=dict_dim,
+            #    use_learnable_std=True
+            #3).cuda(),
+            #"VQ learn.alpha beta 1.0 codebook weight 1.0": VQ_VAE(
+            #    num_codes=num_codes,
+            #    dim_z=dict_dim,
+            #    use_learnable_std=True,
+            #    beta=1.0
+            #).cuda(),
+            #"VQ learn.alpha beta 0.60 codebook weight 1.0": VQ_VAE(
+            #    num_codes=num_codes,
+            #    dim_z=dict_dim,
+            #    use_learnable_std=True,
+            #    beta=0.6
+            #).cuda(),
+            #"VQ_STE++++ learn. alpha": VQ_VAE(
+            #    num_codes=num_codes,
+            #    sync_nu=2.0,
+            #    dim_z=dict_dim,
                 # beta=1.0,
                 # inplace_optimizer=inplace_optimizer3,
-                use_learnable_std=True,
-                replace_freq=100,
-                norm='l2',
-                cb_norm='l2'
-            ).cuda(),
-            "VQ ++ learn.alpha(LRU L2)": VQ_VAE(
-                num_codes=num_codes,
-                dim_z=dict_dim,
-                use_learnable_std=True,
-                replace_freq=100,
-                norm='l2',
-                cb_norm='l2'
-            ).cuda(),
+            #    use_learnable_std=True,
+            #    replace_freq=100,
+            #    norm='l2',
+            #    cb_norm='l2'
+            #).cuda(),
+            #"VQ ++ learn.alpha(LRU L2)": VQ_VAE(
+            #    num_codes=num_codes,
+            #    dim_z=dict_dim,
+            #    use_learnable_std=True,
+            #    replace_freq=100,
+            #    norm='l2',
+            #    cb_norm='l2'
+            #).cuda(),
             "VQ_STE++++" : VQ_VAE(
                                 num_codes=num_codes,
                                 sync_nu=2.0,
@@ -374,7 +394,7 @@ def run_model(times):
                                 inplace_optimizer=inplace_optimizer2,
                                 replace_freq=100,
                                 norm='l2',
-                                cb_norm='l2'
+                               cb_norm='l2'
             ).cuda(),
 
 
@@ -403,7 +423,7 @@ def run_model(times):
         else:
             optimizer = torch.optim.AdamW(value.parameters(), lr=learning_rate, weight_decay=weight_decay, betas=(0.9, 0.95))
         scheduler = get_cosine_scheduler(optimizer, learning_rate, 1e-5, warm_epochs * len(train_loader), learning_rate, epochs * len(train_loader))
-        key = key + '  ' + str(times)
+        key = key + ' ' + str(times)
         if isinstance(value, SQVAE):
             train_SQVAE(value, train_loader, optimizer, epochs, config, scheduler)
             result[key] = test(value, test_loader, key)
@@ -425,3 +445,4 @@ def run_model(times):
     plt.show()
     print('seed:' + str(seed))
     print('\n------------------------------End ------------------------------\n')
+    return result
