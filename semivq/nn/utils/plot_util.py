@@ -1,6 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import os
 from sklearn import manifold
+
 
 class my_plot():
     instance = None
@@ -26,6 +28,7 @@ class my_plot():
         self._handle = []
         self._labels = []
         self.file_dir = 'Experiments_cifar_fix'
+        os.makedirs( '../' + self.file_dir, exist_ok=True)
         return
 
     def update(self, perplexity, loss, lpips, model_name=None):

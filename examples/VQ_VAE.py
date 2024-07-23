@@ -10,9 +10,10 @@ from torch.utils.data import DataLoader
 from torchvision import datasets
 from torchvision.transforms import transforms
 from torchvision.utils import make_grid
+from torchvision.datasets import ImageFolder
 
 from semivq import VectorQuant
-from semivq.nn.resnet import EncoderVqResnet32, DecoderVqResnet32
+from semivq.nn.resnet import EncoderVqResnet32, DecoderVqResnet32, EncoderVqResnet64, DecoderVqResnet64
 from torch.nn import functional as F
 from semivq.nn.utils.plot_util import my_plot
 import lpips as lpips
@@ -25,10 +26,19 @@ warnings.filterwarnings("ignore")
 
 
 class VQ_VAE(nn.Module):
+    """Initialization the VQ-VAE model
+        :param
+        dim_z              -> int:  the dimension of codebook vector
+        num_rb             -> int:  the number of resnet block
+        flg_bn             -> bool: the flag to use Batchnorm for resnet
+        flg_var_q          -> bool: 
+        using_penalization -> bool: choose penalization to adjust model behavior
+        vq_kwargs          -> dict: the inner arguments for VQ configuration
+    """
     def __init__(
                 self,
                 dim_z=64, # feature dimension
-                num_rb=2,
+                num_rb=6,
                 flg_bn=True,
                 flg_var_q=False,
                 using_penalization=False,
@@ -36,9 +46,9 @@ class VQ_VAE(nn.Module):
                 **vq_kwargs
     ):
         super().__init__()
-        self._encoder = EncoderVqResnet32(dim_z, num_rb, flg_bn, flg_var_q)
+        self._encoder = EncoderVqResnet64(dim_z, num_rb, flg_bn, flg_var_q)
         self._vq = VectorQuant(dim_z, **vq_kwargs)
-        self._decoder = DecoderVqResnet32(dim_z, num_rb, flg_bn)
+        self._decoder = DecoderVqResnet64(dim_z, num_rb, flg_bn)
         self.using_penalization = using_penalization
         self.inner_learning_rate = inner_learning_rate
         self._ignore_cmtloss = False
@@ -53,12 +63,23 @@ class VQ_VAE(nn.Module):
         return out, vq_dict, None
 
     def ignore_cmtloss(self):
+        """
+           For training VQ-STE++ or VQ-STE++++, they use alternated update.
+           In original paper, they provide a inplace optimizer to implement it.
+           That means we should adjust loss function.
+        """
         return self._ignore_cmtloss
 
     def get_alpha(self):
+        """
+            A method to get the value of learnable standard deviation
+        """
         return self._vq.get_alpha()
 
     def getcodebook(self):
+        """
+            A method to get the value of learnable standard deviation
+        """
         return self._vq.get_codebook()
 
     def alpha_loss(self):
@@ -144,7 +165,7 @@ def train(model, model_name, optimizer, scheduler=None, train_loader=None, alpha
             lpips_loss = lpips_model(image, out).mean()
             rec_loss = F.mse_loss(out, image)
             cmt_loss = vq_out['loss']
-            if model.ignore_cmtloss:
+            if model.ignore_cmtloss():
                 loss = rec_loss + lpips_loss
             else:
                 loss = rec_loss + alpha * cmt_loss + lpips_loss
@@ -152,9 +173,9 @@ def train(model, model_name, optimizer, scheduler=None, train_loader=None, alpha
                 loss += model.alpha_loss()
 
             # backward
-            with torch.autograd.set_detect_anomaly(True):
-                loss.backward()
-                optimizer.step()
+            #with torch.autograd.set_detect_anomaly(True):
+            loss.backward()
+            optimizer.step()
 
             scheduler.step()
             i += 1
@@ -216,7 +237,7 @@ def test(model, test_loader, type = 'test'):
             fig = plt.imshow(np.transpose(npimg, (1, 2, 0)), interpolation='nearest')
             fig.axes.get_xaxis().set_visible(False)
             fig.axes.get_yaxis().set_visible(False)
-            plt.imsave('/home/zwh/Soft-discretization/Experiments_cifar_fix' + '/' + str(type) + '.png')
+            plt.savefig('/home/wenhao/Soft-discretization/Experiments/' + str(type) + '.png')
 
     print('\n ------------------------------Test begin ------------------------------\n')
 
@@ -277,27 +298,32 @@ def merge_datasets(dataset, sub_dataset):
 
 
 def load_dataset(batch_size = 256):
-    transform = transforms.Compose([transforms.ToTensor(), transforms.Resize((32, 32))])
+    transform = transforms.Compose([transforms.ToTensor(), transforms.Resize((128, 128))])
 
-    train_loader = DataLoader(datasets.CIFAR10(root='/data/zwh', train=True, download=True, transform=transform), batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(datasets.CIFAR10(root='/data/zwh', train=False, download=True, transform=transform), batch_size=batch_size, shuffle=True)
+    #train_loader = DataLoader(datasets.CIFAR10(root='/data/zwh', train=True, download=True, transform=transform), batch_size=batch_size, shuffle=True)
+    #test_loader = DataLoader(datasets.CIFAR10(root='/data/zwh', train=False, download=True, transform=transform), batch_size=batch_size, shuffle=True)
 
-    # path = "/data/zwh/img_align_celeba"
+    path = "/data/zwh/img_align_celeba"
     #
-    # data = ImageFolder(root=path, transform=transform)
-    # train_data, test_data =torch.utils.data.random_split(data, [int(len(data) * 0.8), len(data) - int(0.8 * len(data))])
+    data = ImageFolder(root=path, transform=transform)
+    train_data, test_data =torch.utils.data.random_split(data, [int(len(data) * 0.8), len(data) - int(0.8 * len(data))])
     #
-    # train_loader = DataLoader(train_data,
-    #                                    batch_size=batch_size,
-    #                                    shuffle=True,
-    #                                    pin_memory=True
-    #                           )
-    #
-    # test_loader = DataLoader(test_data,
-    #                         batch_size=batch_size,
-    #                         shuffle=True,
-    #                         pin_memory=True)
-    #
+    train_loader = DataLoader(
+                            train_data,
+                            batch_size=batch_size,
+                            shuffle=True,
+                            num_workers=8,
+                            pin_memory=True
+                            )
+    
+    test_loader = DataLoader(
+                            test_data,
+                            batch_size=batch_size,
+                            shuffle=True,
+                            pin_memory=True,
+                            num_workers=8
+                            )
+    
     #path = "/data/zwh/tiny-imagenet-200"
     #train_loader = DataLoader(TinyImageNet(path, True, transform), batch_size=batch_size, shuffle=True)
     #test_loader = DataLoader(TinyImageNet(path, False, transform), batch_size=batch_size, shuffle=True)
@@ -316,13 +342,13 @@ def run_model(times):
     np.random.seed(seed)
 
     # hyperparameters
-    batch_size = 128
+    batch_size = 256
     train_loader, test_loader = load_dataset(batch_size)
     num_codes = 1024
     learning_rate = 1e-4
     epochs = 90
-    alpha = 1.0
-    warm_epochs = 0
+    alpha = 5.0
+    warm_epochs = 10
     weight_decay = 1e-4
     dict_dim = 64
 
@@ -343,10 +369,8 @@ def run_model(times):
 
     inplace_optimizer1 = lambda *args, **kwargs: torch.optim.SGD(*args, **kwargs, lr=10.0, momentum=0.9)
     inplace_optimizer2 = lambda *args, **kwargs: torch.optim.SGD(*args, **kwargs, lr=10.0, momentum=0.9)
-    inplace_optimizer3 = lambda *args, **kwargs: torch.optim.SGD(*args, **kwargs, lr=0.1, momentum=0.9)
-    inplace_optimizer4 = lambda *args, **kwargs: torch.optim.SGD(*args, **kwargs, lr=0.1, momentum=0.9)
     dict = {
-            # "VQ_VAE" : VQ_VAE(num_codes=num_codes).cuda(),
+            "VQ_VAE" : VQ_VAE(num_codes=num_codes).cuda(),
             "VQ_STE++(learnable)" : VQ_VAE(num_codes=num_codes, sync_nu=2.0, affine_lr=2.0, dim_z = dict_dim, beta=1.0, inplace_optimizer = inplace_optimizer1).cuda(),
             #"VQ_STE++ learn.alpha(sync)": VQ_VAE(
             #    num_codes=num_codes,
@@ -377,29 +401,29 @@ def run_model(times):
             #    norm='l2',
             #    cb_norm='l2'
             #).cuda(),
-            #"VQ ++ learn.alpha(LRU L2)": VQ_VAE(
-            #    num_codes=num_codes,
-            #    dim_z=dict_dim,
-            #    use_learnable_std=True,
-            #    replace_freq=100,
-            #    norm='l2',
-            #    cb_norm='l2'
-            #).cuda(),
+            "VQ ++ learn.alpha(LRU L2)": VQ_VAE(
+                num_codes=num_codes,
+                dim_z=dict_dim,
+                use_learnable_std=True,
+                replace_freq=100,
+                norm='l2',
+                cb_norm='l2'
+            ).cuda(),
             "VQ_STE++++" : VQ_VAE(
-                                num_codes=num_codes,
-                                sync_nu=2.0,
-                                affine_lr=2.0,
-                                dim_z=dict_dim,
-                                beta=1.0,
-                                inplace_optimizer=inplace_optimizer2,
-                                replace_freq=100,
-                                norm='l2',
+                               num_codes=num_codes,
+                               sync_nu=2.0,
+                               affine_lr=2.0,
+                               dim_z=dict_dim,
+                               beta=1.0,
+                               inplace_optimizer=inplace_optimizer2,
+                               replace_freq=100,
+                               norm='l2',
                                cb_norm='l2'
             ).cuda(),
 
 
             #"SQ-VAE": GaussianSQVAE(config).cuda(),
-            #"VQ_VAE + learn. alpha" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, dim_z=dict_dim).cuda(),
+            "VQ_VAE + learn. alpha" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, dim_z=dict_dim).cuda(),
             #"VQ_VAE + learn. alpha + schedule lr" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, dim_z=dict_dim, inner_learning_rate=learning_rate * 10).cuda(),
             #"VQ_VAE + learnable std + penalization -(alpha)^2" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, dim_z=dict_dim, using_penalization=True).cuda(),
             #"VQ_VAE + learnable std + penalization (1-alpha)^2" : VQ_VAE(num_codes=num_codes, use_learnable_std=True, dim_z=dict_dim, using_penalization=True, alter_penalty="between1").cuda(),

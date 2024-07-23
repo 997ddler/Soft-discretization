@@ -139,7 +139,7 @@ class VectorQuant(_VQBaseLayer):
 
 		if self.training and hasattr(self, 'inplace_codebook_optimizer'):
 			# update codebook inplace 
-			(5 * ((z_q - z.detach()) ** 2)).mean().backward(retain_graph=True)
+			(((z_q - z.detach()) ** 2)).mean().backward(retain_graph=True)
 			self.inplace_codebook_optimizer.step()
 			self.inplace_codebook_optimizer.zero_grad()
 

@@ -7,9 +7,9 @@ def compute(values=[]):
     mean = np.mean(values)
     std = np.std(values, ddof=1)
 
-torch.cuda.set_device(3)
+torch.cuda.set_device(1)
 all_results = {}
-for i in range(5):
+for i in range(1):
     results = VQ_VAE.run_model(i)
     if i == 0:
         for key, value in results.items():
